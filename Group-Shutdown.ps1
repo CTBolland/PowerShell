@@ -63,17 +63,16 @@ function Write-Log {
 $servers = Import-Csv -Path $list | Where-Object {$_.Group -eq $group} 
 foreach ($server in $servers) {
     # csv variables
+    # csv variables
     $ip = $server.ip
     $name = $server.name
-    $hoster = $server.host
+    $hostName = $server.host
     $type = $server.type
     # determine if VM
     if ($type -eq "Guest") { 
-        $s = New-PSSession -ComputerName $hoster
-        Invoke-Command -Session $s -ScriptBlock {param($vm) Stop-VM $vm -Force} -ArgumentList $name -WarningVariable a
+        Stop-VM –Name $name –ComputerName (Get-ClusterNode –Cluster $hostName) -WarningVariable a
         Write-Log $a
-        $r = Get-PSSession -ComputerName $hoster
-        $r | Remove-PSSession
+        Remove-PSSession $hoster
     # determine if physical box
     } elseif ($type -eq "Host" -or "Physical") {
         shutdown -s -m \\$name -t 1 /f 
