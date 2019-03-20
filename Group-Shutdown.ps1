@@ -1,17 +1,19 @@
 #REQUIRES -Version 2.0
 <# 
 .SYNOPSIS
-    Group Shutdown of Remote Computers
+    Group Shutdown of Virtual and Physical Servers, via the Hosts.
     
 .DESCRIPTION
-    Pulls from a CSV list and shuts down servers. If Server is a Hyper-V VM, it sends a "Stop-VM $name" command to the host.
-    This way the script need not connect to every single VM, but simply connect to their host. 
+    Pulls from a CSV list and shuts down servers. If Server is a Hyper-V VM, it sends a "Stop-VM $name" command 
+    to the host. This way the script need not connect to every single VM, but simply connect to their host/cluster. 
     It first checks if the VM is located on a Cluster, which are defiend at the top of the script. 
     This is done for security reasons, and ease of management. 
-    If it's a physical box, it sends a "shutdown -s -m \\$name". Note: This command requires that the physical server 
-    is configured to allow remote shutdown. 
     
-    This script is best used in conjunction with task scheduler, or paired with a power management solution such as Eaton.   
+    If it's a physical box, it sends a "shutdown -s -m \\$name". Note: This command requires that the physical 
+    server is configured to allow remote shutdown. 
+    
+    This script is best used in conjunction with task scheduler, or paired with a power management solution such 
+    as Eaton.   
     
 .INPUTS
     This CSV that contains all the device information should have the following columns:
@@ -51,9 +53,11 @@ $list = "c:\Temp\Servers.csv"
 $logPath = "c:\Temp\logs"
 $clusters = @("clusterA", "clusterB") # <--add or $null failover clusters here
 
-# logging variables and function
+# create date-samped log file if one doesnt exist.
 $log = "$logPath\Server-Shutdown-Log-" + (Get-Date).tostring("MM-dd-yyyy") + ".txt" 
 if(!(Test-Path -Path $log )){New-Item -ItemType File -Path $log}
+
+# log function
 function Write-Log {
     param ([string]$Message)  
     $time = "[{0:HH:mm:ss}]" -f (Get-Date)
@@ -63,7 +67,7 @@ function Write-Log {
 # select all devices in the specified group
 $servers = Import-Csv -Path $list| Where-Object {$_.Group -eq $group} 
 foreach ($server in $servers) {
-    # csv variables
+# pull variables from CSV columns
     $ip = $server.ip
     $name = $server.name
     $hostName = $server.host
