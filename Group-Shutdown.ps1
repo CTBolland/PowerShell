@@ -7,7 +7,9 @@
     Pulls from a CSV list and shuts down servers. If Server is a Hyper-V VM, it sends a "Stop-VM $name" command 
     to the host. This way the script need not connect to every single VM, but simply connect to their host/cluster. 
     It first checks if the VM is located on a Cluster, which are defiend at the top of the script. 
-    This is done for security reasons, and ease of management. 
+    This is done for security reasons, and ease of management. Make sure that if targeting VM's hoted on a cluster 
+    that you run this script from a machine that has the Failover Remote Management Tools installed, otherwise the
+    Cluster-related commands will fail.
     
     If it's a physical box, it sends a "shutdown -s -m \\$name". Note: This command requires that the physical 
     server is configured to allow remote shutdown. 
