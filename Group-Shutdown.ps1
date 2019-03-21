@@ -12,7 +12,7 @@
     Cluster-related commands will fail.
     
     If it's a physical box, it sends a "shutdown -s -m \\$name". Note: This command requires that the physical 
-    server is configured to allow remote shutdown. 
+    server is configured to allow WMI through the firewall.
     
     This script is best used in conjunction with task scheduler, or paired with a power management solution such 
     as Eaton.   
@@ -49,56 +49,78 @@
     UPDATED:        03-19-2019 
 #> 
 # ---------------------------------------------------------- 
-param ([string]$group)  
+param (
+    [string]$group
+)  
 
-$list = "c:\Temp\Servers.csv"
-$logPath = "c:\Temp\logs"
-$clusters = @("clusterA", "clusterB") # <--add or $null failover clusters here
+$deviceList = "c:\temp\servers.csv"
+$logFolder = "c:\temp\logs"
+$log = ("$logFolder\Server-Shutdown-Log-" + (Get-Date).tostring("MM-dd-yyyy") + ".txt")
+$clusters = @("cluster1", "cluster2")
+$pTypes = @("host", "physical", "cluster*")
+$guest = "guest"
 
-# create date-samped log file if one doesnt exist.
-$log = "$logPath\Server-Shutdown-Log-" + (Get-Date).tostring("MM-dd-yyyy") + ".txt" 
+$log = ("$logFolder\Server-Shutdown-Log-" + (Get-Date).tostring("MM-dd-yyyy") + ".txt")
 if(!(Test-Path -Path $log )){New-Item -ItemType File -Path $log}
 
-# log function
 function Write-Log {
-    param ([string]$Message)  
-    $time = "[{0:HH:mm:ss}]" -f (Get-Date)
-    Write-Output "$($time)Group[$group]-[$ip]-[$hostName]-[$name] $message"| Out-file $log  -Append -Force
+    param (      
+        [string]$status,
+        [string]$Message
+    )    
+    $time = "{0:HH:mm:ss}" -f (Get-Date)
+    $line = [pscustomobject]@{
+        'DateTime' = $time
+        'Status' = $status
+        'Group' = $group
+        'Name' = $name
+        'Type' = $type
+        'Host' = $hoster
+        'IP' = $ip
+        'Message' = $Message    
+    }   
+    $line | Export-Csv -Path $Log -Append -NoTypeInformation
 }
 
 # select all devices in the specified group
-$servers = Import-Csv -Path $list| Where-Object {$_.Group -eq $group} 
+$servers = Import-Csv -Path $deviceList| Where-Object {$_.Group -eq $group} 
 foreach ($server in $servers) {
-# pull variables from CSV columns
+    # csv variables
     $ip = $server.ip
     $name = $server.name
-    $hostName = $server.host
     $type = $server.type
+    $hoster = $server.host
+    
+# determine if VM is on cluster or standalone server host:
+    # if hosted in a failover cluster:
+    if (($type -eq $guest) -and ($hoster -in $clusters)) {
+        # find and shut down vm on whatever node it is currently on
+        Get-ClusterNode –Cluster $hoster | Get-ClusterResource -Name *$name | Get-VM | Stop-VM -Force -WarningVariable a
+        if ($a -eq $null) { Write-Log -status "SHUTDOWN" -Message "Shutdown Initiated" } else { Write-Log -status "OFFLINE" -message $a }
+    } 
+    # if hosted on a standalone host:
+    elseif (($type -eq $guest) -and ($hoster -notin $clusters)) {
+        Stop-VM –Name $name –ComputerName ($hoster) -Force -WarningVariable a
+        if ($a -eq $null) { Write-Log -status "SHUTDOWN" -Message "Shutdown Initiated"  } else { Write-Log -status "OFFLINE" -message $a }
+    }
 
-# If the device is a guest VM on a cluster or a standalone host:
-    if ($type -eq "Guest") { 
-        # if hosted on a cluster:
-        if ($hostName -in $clusters) {
-            Stop-VM –Name $name –ComputerName (Get-ClusterNode –Cluster $hostName) -WarningVariable a
-            if ($a -eq $null) { Write-Log -Message "SUCESS, intiating shutdown" } else { Write-Log $a }
-        # if hosted on a standalone host:
-        } else {
-            Stop-VM –Name $name –ComputerName ($hostName) -WarningVariable a
-            if ($a -eq $null) { Write-Log -Message "SUCESS, intiating shutdown" } else { Write-Log $a }
-        }
-
-# If the device is a physical server:
-    } elseif ($type -eq "Host" -or "Physical") {
-        shutdown -s -m \\$name -t 1 /f /d p:0:0 /c "Admin Initiated Shutdown"
-        # if throws error and is pingable:
+#   If the device is a physical server:
+    elseif ($type -in $pTypes) {
+        # shutdown command
+        shutdown -s -m \\$ip -t 1 /f
+        # error and is pingable:
         if ($LastExitCode -ne 0 -And (Test-Connection -computername $ip -Quiet -Count 1)) {
-            Write-Log -Message "ERROR($LastExitCode)"
-        # if throws error and is not pingable:
-        } elseif ($LastExitCode -ne 0 -And (!(Test-Connection -computername $ip -Quiet -Count 1))) {
-            Write-Log -Message "OFFLINE"
+            Write-Log -status "MISCONFIGURED" -Message "Error Code($LastExitCode)"
+        }
+        # error and is not pingable:
+        elseif ($LastExitCode -ne 0 -And (!(Test-Connection -computername $ip -Quiet -Count 1))) {
+            Write-Log -status "OFFLINE" -message "Computer already powered off"
+        }
         # no error:
-        } else { 
-            Write-Log -Message "SUCESS, intiating shutdown"
+        else { 
+            Write-Log -status "ACCEPTED" -message "Shutdown Initiated"
         }
     }
 }
+
+
