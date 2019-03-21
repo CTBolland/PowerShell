@@ -104,7 +104,7 @@ foreach ($server in $servers) {
         if ($a -eq $null) { Write-Log -status "SHUTDOWN" -Message "Shutdown Initiated"  } else { Write-Log -status "OFFLINE" -message $a }
     }
 
-#   If the device is a physical server:
+# If the device is a physical server:
     elseif ($type -in $pTypes) {
         # shutdown command
         shutdown -s -m \\$ip -t 1 /f
